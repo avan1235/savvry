@@ -1,5 +1,6 @@
 const CACHE_VERSION = '{{OVERRIDE THIS IN DEPLOYMENT}}';
 const CACHE_NAME = `savvry-app-cache-${CACHE_VERSION}`;
+const CACHED_EXTENSIONS = ['.html', '.wasm', '.png', '.ico', '.ttf', '.cvr', '.js', '.css'];
 
 self.addEventListener('install', event => {
     self.skipWaiting();
@@ -49,31 +50,36 @@ function checkVersion() {
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
-    event.respondWith(
-        checkVersion().then(isVersionMatch => {
-            if (!isVersionMatch) {
-                return fetch(event.request);
-            }
+    const shouldCache = event.request.method === 'GET' &&
+        (CACHED_EXTENSIONS.some(ext => url.pathname.endsWith(ext)) || url.pathname === '/');
 
-            return caches.match(event.request).then(cachedResponse => {
-                if (cachedResponse) {
-                    return cachedResponse;
+    if (shouldCache) {
+        event.respondWith(
+            checkVersion().then(isVersionMatch => {
+                if (!isVersionMatch) {
+                    return fetch(event.request);
                 }
 
-                return fetch(event.request).then(networkResponse => {
-                    if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-                        return networkResponse;
+                return caches.match(event.request).then(cachedResponse => {
+                    if (cachedResponse) {
+                        return cachedResponse;
                     }
 
-                    const responseToCache = networkResponse.clone();
+                    return fetch(event.request).then(networkResponse => {
+                        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                            return networkResponse;
+                        }
 
-                    caches.open(CACHE_NAME).then(cache => {
-                        cache.put(event.request, responseToCache);
+                        const responseToCache = networkResponse.clone();
+
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(event.request, responseToCache);
+                        });
+
+                        return networkResponse;
                     });
-
-                    return networkResponse;
                 });
-            });
-        })
-    );
+            })
+        );
+    }
 });
