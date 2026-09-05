@@ -1,6 +1,5 @@
 const CACHE_VERSION = '{{OVERRIDE THIS IN DEPLOYMENT}}';
 const CACHE_NAME = `savvry-app-cache-${CACHE_VERSION}`;
-const CACHED_EXTENSIONS = ['.wasm', '.png', '.ttf', '.cvr', '.js', '.css'];
 
 self.addEventListener('install', event => {
     self.skipWaiting();
@@ -21,15 +20,42 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
+let versionCheckPromise = null;
+
+function checkVersion() {
+    if (!versionCheckPromise) {
+        versionCheckPromise = fetch('/version')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Version fetch failed');
+                }
+                return response.text();
+            })
+            .then(version => {
+                if (version.trim() !== CACHE_VERSION) {
+                    return caches.keys().then(cacheNames => {
+                        return Promise.all(
+                            cacheNames.map(cacheName => caches.delete(cacheName))
+                        );
+                    }).then(() => false);
+                }
+                return true;
+            })
+            .catch(() => true);
+    }
+    return versionCheckPromise;
+}
+
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
-    const shouldCache = event.request.method === 'GET' &&
-        CACHED_EXTENSIONS.some(ext => url.pathname.endsWith(ext));
+    event.respondWith(
+        checkVersion().then(isVersionMatch => {
+            if (!isVersionMatch) {
+                return fetch(event.request);
+            }
 
-    if (shouldCache) {
-        event.respondWith(
-            caches.match(event.request).then(cachedResponse => {
+            return caches.match(event.request).then(cachedResponse => {
                 if (cachedResponse) {
                     return cachedResponse;
                 }
@@ -47,7 +73,7 @@ self.addEventListener('fetch', event => {
 
                     return networkResponse;
                 });
-            })
-        );
-    }
+            });
+        })
+    );
 });
