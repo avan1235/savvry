@@ -9,8 +9,13 @@ import arrow.core.Either
 import `in`.procyk.savvry.Identifiable
 import `in`.procyk.savvry.Orderable
 import `in`.procyk.savvry.SavvryStore
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import savvry.app.generated.resources.Res
@@ -110,38 +115,14 @@ internal abstract class ImportableCollectionViewModel<TStored, TData, TItem, TIn
             context.storeFlow.map { it.storedItems() }.distinctUntilIdsChanged().collectLatest { stored ->
                 _isLoading.value = true
                 val useCache = store.useCacheStored()
-                try {
-                    val resolved = stored.mapNotNull { entry ->
-                        val key = entry.id
-                        inMemoryCache[key] ?: run {
-                            val cached = if (useCache) cachedData(entry) else null
-                            val data = cached ?: fetchData(entry).fold(
-                                ifLeft = { it },
-                                ifRight = { err ->
-                                    when (err) {
-                                        FetchError.Internal -> {
-                                            context.showSnackbar(Res.string.error_internal)
-                                        }
+                val sortByColor = store.sortByColorStored()
+                val resultsMutex = Mutex()
+                val resolvedById = mutableMapOf<Uuid, TItem>()
 
-                                        FetchError.UnknownId -> launchUpdateConfig { st ->
-                                            st.withStoredItems(st.storedItems().filter { it.id != entry.id })
-                                        }
-                                    }
-                                    return@run null
-                                },
-                            )
-                            launchUpdateConfig { st ->
-                                st.withStoredItems(
-                                    st.storedItems().map {
-                                        if (it.id == key) withCachedData(it, if (useCache) data else null) else it
-                                    },
-                                )
-                            }
-                            buildItem(entry, data)
-                        }?.also { inMemoryCache[key] = it }
-                    }
+                suspend fun publish() {
+                    val resolved = resultsMutex.withLock { stored.mapNotNull { resolvedById[it.id] } }
                     val sorted = postProcessItems(resolved).let { items ->
-                        if (store.sortByColorStored()) {
+                        if (sortByColor) {
                             val colorMap = stored.associate { it.id to color(it)?.let(::Color)?.toHsv() }
                             items.sortedWith(compareBy(HcvColorComparator, { colorMap[it.id] }))
                         } else {
@@ -149,6 +130,46 @@ internal abstract class ImportableCollectionViewModel<TStored, TData, TItem, TIn
                         }
                     }
                     _items.value = sorted
+                }
+
+                try {
+                    coroutineScope {
+                        stored.map { entry ->
+                            async {
+                                val key = entry.id
+                                val item = inMemoryCache[key] ?: run {
+                                    val cached = if (useCache) cachedData(entry) else null
+                                    val data = cached ?: fetchData(entry).fold(
+                                        ifLeft = { it },
+                                        ifRight = { err ->
+                                            when (err) {
+                                                FetchError.Internal -> {
+                                                    context.showSnackbar(Res.string.error_internal)
+                                                }
+
+                                                FetchError.UnknownId -> launchUpdateConfig { st ->
+                                                    st.withStoredItems(st.storedItems().filter { it.id != entry.id })
+                                                }
+                                            }
+                                            return@run null
+                                        },
+                                    )
+                                    launchUpdateConfig { st ->
+                                        st.withStoredItems(
+                                            st.storedItems().map {
+                                                if (it.id == key) withCachedData(it, if (useCache) data else null) else it
+                                            },
+                                        )
+                                    }
+                                    buildItem(entry, data)
+                                }?.also { inMemoryCache[key] = it }
+                                if (item != null) {
+                                    resultsMutex.withLock { resolvedById[key] = item }
+                                    publish()
+                                }
+                            }
+                        }.awaitAll()
+                    }
                     resetUserInput()
                 } finally {
                     _isLoading.value = false
