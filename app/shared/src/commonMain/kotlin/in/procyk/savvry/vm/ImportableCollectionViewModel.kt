@@ -9,13 +9,11 @@ import arrow.core.Either
 import `in`.procyk.savvry.Identifiable
 import `in`.procyk.savvry.Orderable
 import `in`.procyk.savvry.SavvryStore
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import savvry.app.generated.resources.Res
@@ -24,6 +22,7 @@ import savvry.app.generated.resources.error_removing_item
 import savvry.app.generated.resources.loading_importing
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 internal abstract class ImportableCollectionViewModel<TStored, TData, TItem, TInputContext>(
@@ -111,64 +110,62 @@ internal abstract class ImportableCollectionViewModel<TStored, TData, TItem, TIn
         if (!launchedUpdateStoredItemsInBackground.compareAndSet(expectedValue = false, newValue = true)) return
 
         viewModelScope.launch {
-            val inMemoryCache = mutableMapOf<Uuid, TItem>()
-            context.storeFlow.map { it.storedItems() }.distinctUntilIdsChanged().collectLatest { stored ->
-                _isLoading.value = true
-                val useCache = store.useCacheStored()
-                val sortByColor = store.sortByColorStored()
-                val resultsMutex = Mutex()
-                val resolvedById = mutableMapOf<Uuid, TItem>()
+            val resolvedData = MutableStateFlow<Map<Uuid, TData>>(emptyMap())
 
-                suspend fun publish() {
-                    val resolved = resultsMutex.withLock { stored.mapNotNull { resolvedById[it.id] } }
-                    val sorted = postProcessItems(resolved).let { items ->
-                        if (sortByColor) {
+            launch {
+                combine(
+                    storeFlow.map { Triple(it.useCacheStored(), it.sortByColorStored(), it.storedItems()) }
+                        .distinctUntilChanged(),
+                    resolvedData
+                ) { (useCacheStored, sortByColorStored, stored), data ->
+                    val resolved = stored.mapNotNull { entry ->
+                        val value = data[entry.id] ?: cachedData(entry).takeIf { useCacheStored }
+                        value?.let { buildItem(entry, it) }
+                    }
+                    postProcessItems(resolved).let { items ->
+                        if (sortByColorStored) {
                             val colorMap = stored.associate { it.id to color(it)?.let(::Color)?.toHsv() }
                             items.sortedWith(compareBy(HcvColorComparator, { colorMap[it.id] }))
                         } else {
                             items.sorted()
                         }
                     }
-                    _items.value = sorted
-                }
+                }.collect { _items.value = it }
+            }
 
+            storeFlow.map { it.storedItems() }.distinctUntilChanged().collectLatest { stored ->
+                val ids = stored.mapTo(HashSet()) { it.id }
+                resolvedData.update { it.filterKeys { id -> id in ids } }
+                _isLoading.value = true
                 try {
-                    coroutineScope {
-                        stored.map { entry ->
-                            async {
-                                val key = entry.id
-                                val item = inMemoryCache[key] ?: run {
-                                    val cached = if (useCache) cachedData(entry) else null
-                                    val data = cached ?: fetchData(entry).fold(
+                    withTimeoutOrNull(10.seconds) {
+                        stored.forEach { entry ->
+                            launch {
+                                if (entry.id in resolvedData.value) return@launch
+                                val data = cachedData(entry).takeIf { store.useCacheStored() }
+                                    ?: fetchData(entry).fold(
                                         ifLeft = { it },
-                                        ifRight = { err ->
-                                            when (err) {
-                                                FetchError.Internal -> {
-                                                    context.showSnackbar(Res.string.error_internal)
-                                                }
-
-                                                FetchError.UnknownId -> launchUpdateConfig { st ->
-                                                    st.withStoredItems(st.storedItems().filter { it.id != entry.id })
+                                        ifRight = { error ->
+                                            when (error) {
+                                                FetchError.Internal -> context.showSnackbar(Res.string.error_internal)
+                                                FetchError.UnknownId -> launchUpdateConfig { config ->
+                                                    config.withStoredItems(
+                                                        config.storedItems().filter { it.id != entry.id })
                                                 }
                                             }
-                                            return@run null
+                                            return@launch
                                         },
                                     )
-                                    launchUpdateConfig { st ->
-                                        st.withStoredItems(
-                                            st.storedItems().map {
-                                                if (it.id == key) withCachedData(it, if (useCache) data else null) else it
-                                            },
-                                        )
-                                    }
-                                    buildItem(entry, data)
-                                }?.also { inMemoryCache[key] = it }
-                                if (item != null) {
-                                    resultsMutex.withLock { resolvedById[key] = item }
-                                    publish()
+                                resolvedData.update { it + (entry.id to data) }
+                                launchUpdateConfig { config ->
+                                    config.withStoredItems(config.storedItems().map {
+                                        if (it.id == entry.id) withCachedData(
+                                            it,
+                                            data.takeIf { config.useCacheStored() }) else it
+                                    })
                                 }
                             }
-                        }.awaitAll()
+                        }
                     }
                     resetUserInput()
                 } finally {

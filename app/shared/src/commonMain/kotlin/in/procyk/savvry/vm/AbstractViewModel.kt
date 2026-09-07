@@ -268,9 +268,6 @@ fun <T, U> Flow<U>.debounceSameIds(delay: Duration): Flow<U> where T : Identifia
     }
 }
 
-fun <T, U> Flow<U>.distinctUntilIdsChanged(): Flow<U> where T : Identifiable, U : Iterable<T> =
-    distinctUntilChanged { old, new -> old.mapTo(HashSet()) { it.id } == new.mapTo(HashSet()) { it.id } }
-
 internal expect fun updateListLocationPresentation(listId: String?)
 
 internal expect suspend fun onShareList(listId: String, context: Context)

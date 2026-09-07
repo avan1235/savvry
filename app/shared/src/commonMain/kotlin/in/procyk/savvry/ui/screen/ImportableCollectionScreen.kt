@@ -76,23 +76,11 @@ internal fun <V, I> ImportableCollectionScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state = listState,
         ) {
-            if (isLoading) item(key = "$testTag-loading-indicator") {
-                Row(
-                    modifier = Modifier
-                        .padding(start = 16.dp)
-                        .fillParentMaxWidth()
-                        .animateItem(),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                }
-            }
             if (enableEditMode || (!isLoading && items?.isEmpty() == true)) item(key = "$testTag-actions") {
                 Box(
                     modifier = Modifier
                         .padding(
                             start = 16.dp,
-                            top = if (isLoading) 8.dp else 0.dp,
                             bottom = if (items?.isNotEmpty() == true) 8.dp else 0.dp,
                         )
                         .fillMaxWidth()
@@ -148,6 +136,17 @@ internal fun <V, I> ImportableCollectionScreen(
                     }
                 }
 
+            }
+            if (isLoading) item(key = "$testTag-loading-indicator") {
+                Row(
+                    modifier = Modifier
+                        .padding(start = 16.dp)
+                        .fillParentMaxWidth()
+                        .animateItem(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                }
             }
             item(key = "$testTag-liquid-spacer") {
                 LiquidBottomTabsSpacer(vm)
