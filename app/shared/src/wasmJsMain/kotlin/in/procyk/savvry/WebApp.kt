@@ -31,7 +31,9 @@ fun runSavvryWebApp() {
     val body = document.body ?: error("no <body>")
     val platformContext = PlatformContext()
 
-    ComposeViewport {
+    ComposeViewport(
+        configure = { isA11YEnabled = false }
+    ) {
         val fontFamilyResolver = LocalFontFamilyResolver.current
         var fontsLoaded by remember { mutableStateOf(false) }
 
