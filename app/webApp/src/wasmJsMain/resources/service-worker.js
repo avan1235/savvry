@@ -1,4 +1,5 @@
-const CACHE_VERSION = '{{OVERRIDE THIS IN DEPLOYMENT}}';
+const CACHE_VERSION = '{{CACHE_VERSION}}';
+const API_URL = '{{API_URL}}';
 const CACHE_NAME = `savvry-app-cache-${CACHE_VERSION}`;
 const CACHED_EXTENSIONS = ['.html', '.wasm', '.png', '.ico', '.ttf', '.cvr', '.js', '.css'];
 
@@ -25,7 +26,8 @@ let versionCheckPromise = null;
 
 function checkVersion() {
     if (!versionCheckPromise) {
-        versionCheckPromise = fetch('/version')
+        const versionEndpoint = API_URL === '{{API_URL}}' ? '/version' : `${API_URL}/version`;
+        versionCheckPromise = fetch(versionEndpoint)
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Version fetch failed');

@@ -72,14 +72,15 @@ jobs:
         env:
           VERSION: ${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}
 
-      - name: Inject Cache Version into Service Worker
+      - name: Inject Env into Service Worker
         if: job.status == 'success'
         run: |
-          SW_PATH="./app/webApp/build/dist/wasmJs/productionExecutable/service-worker.js"
-          NEW_VERSION="v${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}"
-          
-          echo "Replacing placeholder with $NEW_VERSION in $SW_PATH"
-          sed -i "s/{{OVERRIDE THIS IN DEPLOYMENT}}/$NEW_VERSION/g" $SW_PATH
+          SW_PATH="./app/webApp/build/dist/wasmJs/pr oductionExecutable/service-worker.js"
+          CACHE_VERSION="v${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}"
+          API_URL="https://${{ secrets.CLIENT_HOST }}:${{ secrets.CLIENT_PORT }}"
+
+          sed -i "s/{{CACHE_VERSION}}/$CACHE_VERSION/g" $SW_PATH
+          sed -i "s/{{API_URL}}/$API_URL/g" $SW_PATH
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
