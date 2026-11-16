@@ -75,7 +75,7 @@ jobs:
       - name: Inject Env into Service Worker
         if: job.status == 'success'
         run: |
-          SW_PATH="./app/webApp/build/dist/wasmJs/pr oductionExecutable/service-worker.js"
+          SW_PATH="./app/webApp/build/dist/wasmJs/productionExecutable/service-worker.js"
           CACHE_VERSION="v${{ env.MAJOR }}.${{ env.MINOR }}.${{ env.PATCH }}"
           API_URL="https://${{ secrets.CLIENT_HOST }}:${{ secrets.CLIENT_PORT }}"
 
