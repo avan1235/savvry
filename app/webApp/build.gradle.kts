@@ -35,17 +35,6 @@ tasks.withType<KotlinJsCompile>().configureEach {
     compilerOptions.freeCompilerArgs.add("-Xwasm-kclass-fqn")
 }
 
-fun File.fillClientEnvVariables() {
-    if (!exists()) return
-
-    val content = readText()
-    val updatedContent = content
-        .replace($$"${CLIENT_HOST}", env.CLIENT_HOST.value)
-        .replace($$"${CLIENT_PORT}", env.CLIENT_PORT.value)
-        .replace($$"${CLIENT_HTTP_PROTOCOL}", env.CLIENT_HTTP_PROTOCOL.value)
-    writeText(updatedContent)
-}
-
 fun File.fillServiceWorkerEnvVariables(cacheVersion: String, apiUrl: String) {
     if (!exists()) return
 
@@ -64,8 +53,6 @@ tasks.named("wasmJsProcessResources") {
     inputs.property("apiUrl", apiUrl)
 
     doLast {
-        val indexHtml = layout.buildDirectory.file("processedResources/wasmJs/main/index.html").get().asFile
-        indexHtml.fillClientEnvVariables()
         val serviceWorker = layout.buildDirectory.file("processedResources/wasmJs/main/service-worker.js").get().asFile
         serviceWorker.fillServiceWorkerEnvVariables(cacheVersion, apiUrl)
     }

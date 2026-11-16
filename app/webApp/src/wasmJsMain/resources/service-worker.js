@@ -26,8 +26,7 @@ let versionCheckPromise = null;
 
 function checkVersion() {
     if (!versionCheckPromise) {
-        const versionEndpoint = API_URL === '{{API_URL}}' ? '/version' : `${API_URL}/version`;
-        versionCheckPromise = fetch(versionEndpoint)
+        versionCheckPromise = fetch(`${API_URL}/version`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Version fetch failed');
