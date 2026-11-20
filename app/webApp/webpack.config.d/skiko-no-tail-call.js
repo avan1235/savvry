@@ -18,7 +18,7 @@
     const fs = require("fs");
 
     // Webpack runs this config from build/wasm/packages/<package>, four levels below the repository root.
-    const loader = path.resolve(__dirname, "../../../../app/webpack/skiko-no-tail-call-loader.cjs");
+    const loader = path.resolve(__dirname, "../../../../app/webApp/webpack/skiko-no-tail-call-loader.cjs");
     if (!fs.existsSync(loader)) {
         throw new Error(`Skiko tail-call loader not found at ${loader}`);
     }
